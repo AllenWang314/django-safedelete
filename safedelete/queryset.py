@@ -7,10 +7,11 @@ from django.db.models import query
 from .config import HARD_DELETE, NO_DELETE
 from .query import SafeDeleteQuery
 
-_QS = TypeVar('_QS', bound='SafeDeleteQueryset')
+_T = TypeVar("_T", bound=models.Model)
+_QS = TypeVar("_QS", bound="SafeDeleteQueryset")
 
 
-class SafeDeleteQueryset(query.QuerySet):
+class SafeDeleteQueryset(query.QuerySet[_T]):
     """Default queryset for the SafeDeleteManager.
 
     Takes care of "lazily evaluating" safedelete QuerySets. QuerySets passed
@@ -20,28 +21,28 @@ class SafeDeleteQueryset(query.QuerySet):
     """
 
     def __init__(
-            self,
-            model: Optional[Type[models.Model]] = None,
-            query: Optional[SafeDeleteQuery] = None,
-            using: Optional[str] = None,
-            hints: Optional[Dict[str, models.Model]] = None
+        self,
+        model: type[models.Model] | None = None,
+        query: SafeDeleteQuery | None = None,
+        using: str | None = None,
+        hints: dict[str, models.Model] | None = None,
     ):
         super(SafeDeleteQueryset, self).__init__(model=model, query=query, using=using, hints=hints)
         self.query: SafeDeleteQuery = query or SafeDeleteQuery(self.model)
 
     @classmethod
     def as_manager(cls):
-        """Override as_manager behavior to ensure we create a SafeDeleteManager.
-        """
+        """Override as_manager behavior to ensure we create a SafeDeleteManager."""
         # Address the circular dependency between `SafeDeleteQueryset` and `SafeDeleteManager`.
         from .managers import SafeDeleteManager
 
         manager = SafeDeleteManager.from_queryset(cls)()
         manager._built_with_as_manager = True
         return manager
+
     as_manager.queryset_only = True  # type: ignore
 
-    def delete(self, force_policy: Optional[int] = None) -> Tuple[int, Dict[str, int]]:
+    def delete(self, force_policy: int | None = None) -> tuple[int, dict[str, int]]:
         """Overrides bulk delete behaviour.
 
         .. note::
@@ -64,17 +65,18 @@ class SafeDeleteQueryset(query.QuerySet):
                 res = obj.delete(force_policy=force_policy)
                 if res is not None:
                     _, delete_response = res
-                    deleted_counter.update(delete_response)                
+                    deleted_counter.update(delete_response)
             self._result_cache = None
             return sum(deleted_counter.values()), dict(deleted_counter)
+
     delete.alters_data = True  # type: ignore
 
-    def hard_delete_policy_action(self) -> Tuple[int, Dict[str, int]]:
+    def hard_delete_policy_action(self) -> tuple[int, dict[str, int]]:
         # Normally hard-delete the objects.
         self.query._filter_visibility()
         return super().delete()
 
-    def undelete(self, force_policy: Optional[int] = None) -> Tuple[int, Dict[str, int]]:
+    def undelete(self, force_policy: int | None = None) -> tuple[int, dict[str, int]]:
         """Undelete all soft deleted models.
 
         .. note::
@@ -92,6 +94,7 @@ class SafeDeleteQueryset(query.QuerySet):
             undeleted_counter.update(undelete_response)
         self._result_cache = None
         return sum(undeleted_counter.values()), dict(undeleted_counter)
+
     undelete.alters_data = True  # type: ignore
 
     def all(self: _QS, force_visibility=None) -> _QS:
